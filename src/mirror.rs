@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::crates::is_new_crates_format;
 use crate::crates_index::rewrite_config_json;
 
+use crate::progress_bar::padded_prefix_message;
 use crate::rustup::download_platform_list;
 use crate::serve::TlsConfig;
 use crate::verify;
@@ -136,7 +137,13 @@ pub fn default_user_agent() -> String {
     format!("Panamax/{}", env!("CARGO_PKG_VERSION"))
 }
 
-pub async fn sync(path: &Path, vendor_path: Option<PathBuf>) -> Result<(), MirrorError> {
+pub async fn sync(
+    path: &Path,
+    vendor_path: Option<PathBuf>,
+    cargo_lock_filepath: Option<PathBuf>,
+    skip_rustup: bool,
+    only_crates_index: bool
+) -> Result<(), MirrorError> {
     if !path.join("mirror.toml").exists() {
         eprintln!(
             "Mirror base not found! Run panamax init {} first.",
@@ -181,7 +188,7 @@ pub async fn sync(path: &Path, vendor_path: Option<PathBuf>) -> Result<(), Mirro
     };
 
     if let Some(rustup) = mirror.rustup {
-        if rustup.sync {
+        if rustup.sync && !skip_rustup {
             crate::rustup::sync(path, &mirror.mirror, &rustup, &user_agent).await?;
         } else {
             eprintln!("Rustup sync is disabled, skipping...");
@@ -192,7 +199,16 @@ pub async fn sync(path: &Path, vendor_path: Option<PathBuf>) -> Result<(), Mirro
 
     if let Some(crates) = mirror.crates {
         if crates.sync {
-            sync_crates(path, vendor_path, &mirror.mirror, &crates, &user_agent).await;
+            sync_crates(
+                path,
+                vendor_path,
+                cargo_lock_filepath,
+                &mirror.mirror,
+                &crates,
+                &user_agent,
+                only_crates_index
+            )
+            .await;
         } else {
             eprintln!("Crates sync is disabled, skipping...");
         }
@@ -241,26 +257,43 @@ pub fn rewrite(path: &Path, base_url: Option<String>) -> Result<(), MirrorError>
 pub async fn sync_crates(
     path: &Path,
     vendor_path: Option<PathBuf>,
+    cargo_lock_filepath: Option<PathBuf>,
     mirror: &ConfigMirror,
     crates: &ConfigCrates,
     user_agent: &HeaderValue,
+    only_crates_index: bool
 ) {
     eprintln!("{}", style("Syncing Crates repositories...").bold());
 
-    if let Err(e) = crate::crates_index::sync_crates_repo(path, crates) {
+    let prefix = padded_prefix_message(1, 3, "Fetching crates.io-index");
+    if let Err(e) = crate::crates_index::sync_crates_repo(prefix, path, crates) {
         eprintln!("Downloading crates.io-index repository failed: {e:?}");
         eprintln!("You will need to sync again to finish this download.");
         return;
     }
 
-    if let Err(e) =
-        crate::crates::sync_crates_files(path, vendor_path, mirror, crates, user_agent).await
-    {
-        eprintln!("Downloading crates failed: {e:?}");
-        eprintln!("You will need to sync again to finish this download.");
-        return;
+    let prefix = padded_prefix_message(2, 3, "Syncing crates files");
+    if !only_crates_index{
+        if let Err(e) = crate::crates::sync_crates_files(
+            prefix,
+            path,
+            vendor_path,
+            cargo_lock_filepath,
+            mirror,
+            crates,
+            user_agent,
+        )
+        .await
+        {
+            eprintln!("Downloading crates failed: {e:?}");
+            eprintln!("You will need to sync again to finish this download.");
+            return;
+        }
+    } else {
+        println!("{prefix}Skipping crate downloading due to index only configuration...");
     }
 
+    eprintln!("{}", padded_prefix_message(3, 3, "Syncing config"));
     if let Err(e) = crate::crates_index::update_crates_config(path, crates) {
         eprintln!("Updating crates.io-index config failed: {e:?}");
         eprintln!("You will need to sync again to finish this download.");
@@ -331,6 +364,7 @@ pub(crate) async fn verify(
     dry_run: bool,
     assume_yes: bool,
     vendor_path: Option<PathBuf>,
+    cargo_lock_filepath: Option<PathBuf>,
 ) -> Result<(), MirrorError> {
     if !path.join("mirror.toml").exists() {
         eprintln!(
@@ -363,8 +397,14 @@ pub(crate) async fn verify(
     let steps = if dry_run || !sync { 1 } else { 2 };
     let mut current_step = 1;
 
-    if let Some(mut missing_crates) =
-        verify::verify_mirror(path.clone(), &mut current_step, steps, vendor_path).await?
+    if let Some(mut missing_crates) = verify::verify_mirror(
+        path.clone(),
+        &mut current_step,
+        steps,
+        vendor_path,
+        cargo_lock_filepath,
+    )
+    .await?
     {
         if dry_run || !sync {
             if !sync {

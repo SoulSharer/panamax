@@ -9,7 +9,6 @@ use git2::{
 use thiserror::Error;
 
 use crate::mirror::ConfigCrates;
-use crate::progress_bar::padded_prefix_message;
 
 #[derive(Error, Debug)]
 pub enum IndexSyncError {
@@ -37,10 +36,13 @@ struct ConfigJson {
 /// `mirror_path`: Root path to the mirror directory.
 ///
 /// `crates`: The crates section of the `mirror.toml` config file.
-pub fn sync_crates_repo(mirror_path: &Path, crates: &ConfigCrates) -> Result<(), IndexSyncError> {
+pub fn sync_crates_repo(
+    prefix: String,
+    mirror_path: &Path,
+    crates: &ConfigCrates,
+) -> Result<(), IndexSyncError> {
     let repo_path = mirror_path.join("crates.io-index");
 
-    let prefix = padded_prefix_message(1, 3, "Fetching crates.io-index");
     let pb = ProgressBar::new_spinner()
         .with_style(
             ProgressStyle::default_bar()
@@ -89,6 +91,13 @@ pub fn sync_crates_repo(mirror_path: &Path, crates: &ConfigCrates) -> Result<(),
         let repo = Repository::open(&repo_path)?;
         let mut remote = repo.find_remote("origin")?;
         remote.fetch(&["master"], Some(&mut fetch_opts), None)?;
+
+        // ⚠ SS: Currently this is bad! Since original code relies on tree diffing to know which crates
+        // to actually download (new/changed ones).
+        // Set master to origin/master.
+        //
+        // Note that this means config.json changes will have to be rewritten on every sync.
+        crate::crates_index::fast_forward(&repo_path)?;
     }
 
     Ok(())
@@ -156,8 +165,6 @@ pub fn rewrite_config_json(repo_path: &Path, base_url: &str) -> Result<(), Index
     let repo = Repository::open(repo_path)?;
     let refname = "refs/heads/master";
     let signature = Signature::now("Panamax", "panamax@panamax")?;
-
-    eprintln!("{}", padded_prefix_message(3, 3, "Syncing config"));
 
     let mut index = repo.index()?;
 

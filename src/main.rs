@@ -30,8 +30,21 @@ enum Panamax {
         path: PathBuf,
 
         /// cargo-vendor directory.
-        #[arg(value_parser)]
+        #[arg(long)]
         vendor_path: Option<PathBuf>,
+
+        /// cargo-lock file.
+        #[arg(long = "cargo-lock")]
+        cargo_lock_filepath: Option<PathBuf>,
+
+        #[arg(long)]
+        skip_rustup: bool,
+
+        // Whether to sync only index, without downloading all the crates
+        // Crates can then be downloaded in a separate step, for example by 
+        // providing a vendor directory or Cargo.lock
+        #[arg(long)]
+        only_crates_index: bool
     },
 
     /// Rewrite the config.json within crates.io-index.
@@ -110,6 +123,10 @@ enum Panamax {
         /// cargo-vendor directory.
         #[arg(value_parser)]
         vendor_path: Option<PathBuf>,
+
+        /// cargo-lock file.
+        #[arg(long = "cargo-lock")]
+        cargo_lock_filepath: Option<PathBuf>,
     },
 }
 
@@ -122,7 +139,13 @@ async fn main() {
             path,
             ignore_rustup,
         } => mirror::init(&path, ignore_rustup),
-        Panamax::Sync { path, vendor_path } => mirror::sync(&path, vendor_path).await,
+        Panamax::Sync {
+            path,
+            vendor_path,
+            cargo_lock_filepath,
+            skip_rustup,
+            only_crates_index
+        } => mirror::sync(&path, vendor_path, cargo_lock_filepath, skip_rustup, only_crates_index).await,
         Panamax::Rewrite { path, base_url } => mirror::rewrite(&path, base_url),
         Panamax::Serve {
             path,
@@ -137,7 +160,8 @@ async fn main() {
             dry_run,
             assume_yes,
             vendor_path,
-        } => mirror::verify(path, dry_run, assume_yes, vendor_path).await,
+            cargo_lock_filepath,
+        } => mirror::verify(path, dry_run, assume_yes, vendor_path, cargo_lock_filepath).await,
     }
     .unwrap_or_else(|e| eprintln!("Panamax command failed! {e}"));
 }
