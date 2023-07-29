@@ -63,6 +63,7 @@ pub struct ConfigRustup {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConfigCrates {
     pub sync: bool,
+    pub whitelisted_only: bool,
     pub download_threads: usize,
     pub source: String,
     pub source_index: String,
@@ -141,6 +142,7 @@ pub async fn sync(
     vendor_path: Option<PathBuf>,
     cargo_lock_filepath: Option<PathBuf>,
     skip_rustup: bool,
+    skip_crate_index: bool
 ) -> Result<(), MirrorError> {
     if !path.join("mirror.toml").exists() {
         eprintln!(
@@ -204,6 +206,7 @@ pub async fn sync(
                 &mirror.mirror,
                 &crates,
                 &user_agent,
+                skip_crate_index
             )
             .await;
         } else {
@@ -258,13 +261,18 @@ pub async fn sync_crates(
     mirror: &ConfigMirror,
     crates: &ConfigCrates,
     user_agent: &HeaderValue,
+    skip_crate_index: bool
 ) {
-    eprintln!("{}", style("Syncing Crates repositories...").bold());
-
-    if let Err(e) = crate::crates_index::sync_crates_repo(path, crates) {
-        eprintln!("Downloading crates.io-index repository failed: {e:?}");
-        eprintln!("You will need to sync again to finish this download.");
-        return;
+    if !skip_crate_index {     
+        eprintln!("{}", style("Syncing Crates repositories...").bold());
+    
+        if let Err(e) = crate::crates_index::sync_crates_repo(path, crates) {
+            eprintln!("Downloading crates.io-index repository failed: {e:?}");
+            eprintln!("You will need to sync again to finish this download.");
+            return;
+        }
+    } else {
+        eprintln!("{}", style("Syncing Crates is disabled, skipping...").bold());
     }
 
     if let Err(e) = crate::crates::sync_crates_files(

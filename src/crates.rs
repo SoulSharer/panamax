@@ -108,7 +108,7 @@ pub async fn sync_crates_files(
     crates: &ConfigCrates,
     user_agent: &HeaderValue,
 ) -> Result<(), SyncError> {
-    let is_crate_whitelist_only = vendor_path.is_some() || cargo_lock_filepath.is_some();
+    let is_crate_whitelist_only = crates.whitelisted_only || vendor_path.is_some() || cargo_lock_filepath.is_some();
 
     // if a vendor_path, parse the filepath for Cargo.toml files for each crate, filling vendors
     let mut mirror_entries = vec![];
@@ -116,7 +116,7 @@ pub async fn sync_crates_files(
     // gather crates from Cargo.lock if supplied
     cargo_lock_to_mirror_entries(&mut mirror_entries, cargo_lock_filepath.as_ref());
 
-    let prefix = padded_prefix_message(2, 3, "Syncing crates files");
+    let prefix = padded_prefix_message(2, 3, &format!("Syncing crates files{}", if is_crate_whitelist_only { " (whitelisted)" } else { "" }));
 
     // For now, assume successful crates.io-index download
     let repo_path = path.join("crates.io-index");

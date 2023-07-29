@@ -106,6 +106,8 @@ download_dev = false
 # Perform crates synchronization. Set this to false if you only want to mirror rustup.
 sync = true
 
+# Perform crate synchronization only for whitelisted crates (currently supplied via vendor or Cargo.lock)
+whitelisted_only = false
 
 # Number of downloads that can be ran in parallel.
 download_threads = 64

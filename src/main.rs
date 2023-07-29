@@ -40,6 +40,9 @@ enum Panamax {
 
         #[arg(long)]
         skip_rustup: bool,
+
+        #[arg(long)]
+        skip_crate_index: bool,
     },
 
     /// Rewrite the config.json within crates.io-index.
@@ -139,7 +142,8 @@ async fn main() {
             vendor_path,
             cargo_lock_filepath,
             skip_rustup,
-        } => mirror::sync(&path, vendor_path, cargo_lock_filepath, skip_rustup).await,
+            skip_crate_index,
+        } => mirror::sync(&path, vendor_path, cargo_lock_filepath, skip_rustup, skip_crate_index).await,
         Panamax::Rewrite { path, base_url } => mirror::rewrite(&path, base_url),
         Panamax::Serve {
             path,
